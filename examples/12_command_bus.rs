@@ -1,12 +1,14 @@
 // cargo run --example 09_command_bus
 
+// Command Bus with more than one command
+
 // Compare with 08_command_bus.rs
-// Avoid
-//      let result                 = dispatch(CreateUser { name: "Alice".into() }, CreateUserHandler);
-//      let result: Option<String> = bus.dispatch(&CreateUser { name: "Alice".into() });
-// We "drop" the command on the bus and it is able to find the good handler
+// Avoid to write   : let result                 = dispatch(CreateUser { name: "Alice".into() }, CreateUserHandler);
+// Instead we write : let result: Option<String> = bus.dispatch(&CreateUser { name: "Alice".into() });
+//
+// We "drop" the application command bus and it is able to find the good handler
 // Doing so the caller doesn't even know "who" will create (or delete) the user nor how this will be done
-// This is totally transparent
+// This is totally transparent for him
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;

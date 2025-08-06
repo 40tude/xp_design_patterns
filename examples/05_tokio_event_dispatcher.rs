@@ -1,29 +1,31 @@
 // cargo run --example 05_tokio_event_dispatcher
 
+// Why this architecture scales well:
+// - Async backpressure through bounded channels
+// - Natural separation of concerns (producers and consumers are decoupled)
+// - Easy fault isolation — if one worker crashes, others can continue
+// - No shared mutable state (safe concurrency)
 
-// Why It Scales
-//      Async backpressure via bounded channels
-//      Natural separation of concerns
-//      Easy fault isolation — crash one worker, others survive
-//      No shared mutable state
+// This example uses Tokio's mpsc (multi-producer, single-consumer) asynchronous channel.
+// It allows multiple asynchronous tasks to send messages to the same receiver task.
 
-// This is a multi-producer, single-consumer (mpsc) channel provided by the Tokio asynchronous library.
-// It allows several tasks to produce messages to the same consumer, asynchronously.
 use tokio::sync::mpsc;
 
-// This is the type of message the channel will carry:
-// Event(String) contains a character string,
-// Shutdown indicates that the worker should stop.
-
+// Define the type of messages that will flow through the channel.
+//
+// - Event(String): carries a payload (here a String)
+// - Shutdown: signals the worker to stop and exit gracefully
 enum Message {
     Event(String),
     Shutdown,
 }
 
-// This is an asynchronous function that receives messages via the rx receiver:
+// This asynchronous function acts as the message consumer.
+//
+// It listens for incoming messages using `rx.recv().await` inside a loop.
+// The loop stops either when a Shutdown message is received,
+// or when the channel is closed (no more messages).
 async fn start_worker(mut rx: mpsc::Receiver<Message>) {
-    // recv().await reads a message from the channel (or None if the channel is closed),
-    // The while let Some(...) loops until the channel is closed or Message::Shutdown is explicitly encountered.
     while let Some(msg) = rx.recv().await {
         match msg {
             Message::Event(data) => {
@@ -37,18 +39,23 @@ async fn start_worker(mut rx: mpsc::Receiver<Message>) {
     }
 }
 
-// This macro initializes the Tokio execution environment. It allows main to be written as an async function.
+// The #[tokio::main] macro initializes the async runtime and allows `main` to be async.
 #[tokio::main]
 async fn main() {
-    // Creates a channel with 100 buffer messages.
-    // tx is the sender (producer), rx the receiver (consumer).
+    // Create a channel with a buffer size of 100 messages.
+    //
+    // - tx: the sender side, used by producers to send messages
+    // - rx: the receiver side, used by the consumer (worker)
     let (tx, rx) = mpsc::channel(100);
 
-    // Starts the start_worker function in an independent asynchronous task (similar to a light thread).
+    // Spawn a new asynchronous task to run the worker.
+    //
+    // The worker will process messages received through the channel.
     tokio::spawn(start_worker(rx));
 
-    // Sends a “hello” message to the worker,
-    // Then sends Shutdown to tell it to stop.
+    // Send a message to the worker
     tx.send(Message::Event("hello".into())).await.unwrap();
+
+    // Send the shutdown signal to stop the worker
     tx.send(Message::Shutdown).await.unwrap();
 }

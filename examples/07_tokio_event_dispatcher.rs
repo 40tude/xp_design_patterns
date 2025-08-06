@@ -1,7 +1,7 @@
 // cargo run --example 07_tokio_event_dispatcher
 
 // multiple workers
-// A channel is created for each worker.
+// A channel is created for each worker
 // main() sends messages in a worker selected randomly
 // Each worker listens to its own Receiver
 // They all receive a Shutdown at the end, bringing their loop to a clean end.
@@ -46,12 +46,12 @@ async fn main() {
         handles.push(handle);
     }
 
-    // Créer un générateur de nombres aléatoires
+    // Create a randome numbers generator
     let mut rng = rand::rng();
 
-    // Envoyer les messages de manière aléatoire
+    // Send messages randomly
     for i in 0..10 {
-        let worker_index = rng.random_range(0..NUM_WORKERS); // Sélection aléatoire d'un worker
+        let worker_index = rng.random_range(0..NUM_WORKERS); // Randomly select a worker
         let msg = Message::Event(format!("Message {i}"));
         senders[worker_index].send(msg).await.unwrap();
     }

@@ -1,36 +1,34 @@
 // cargo run --example 04_state_machine
 
-// implements a finite state machine
-// The program models a process that goes through three states:
-//      Validated → Enriched → Persisted
-// Each state handles an input event (here: Event::Process) and determines the next state.
+// Implements a finite state machine (FSM) in Rust.
+// This example models a process that moves through three states:
+//     Validated → Enriched → Persisted
+// The transition between states is triggered by an input event (Event::Process).
 
-// Show how to implement a flexible and type-safe FSM using traits and dynamic dispatch in Rust.
-// The use of Box<dyn Trait> to hold heterogeneous states that implement a common trait.
-// A simple event loop to drive transitions until a final state is reached.
+// This example shows how to create a flexible and type-safe FSM using traits and dynamic dispatch.
+// Each state is a struct that implements a shared trait called `State`.
+// We use `Box<dyn State>` to hold the current state and allow transitions between different types.
+// The main loop continues until the FSM reaches a terminal state.
 
 use std::fmt::Debug;
 
-// Define an event
-// This is the input the state machine reacts to. There's only one kind of event here: Process.
+// Define the possible events the FSM can handle.
+// In this simple example, there's only one event: Process.
 #[derive(Clone, Debug)]
 pub enum Event {
     Process,
 }
 
-// Define da State trait
-// handle: each state defines how it transitions to the next one when receiving an Event.
-// name: used to identify the current state by name (for logging and comparison).
-// self: Box<Self> is used to take ownership of the state object, allowing it to be replaced by another.
+// Define the State trait that all states must implement.
+// - handle: defines how the state reacts to an event and transitions to the next state.
+// - name: returns the name of the current state as a string for logging and comparison.
 pub trait State {
     fn handle(self: Box<Self>, input: Event) -> Box<dyn State>;
     fn name(&self) -> &'static str;
 }
 
-// Concrete states: Validated, Enriched, Persisted
-// Each struct implements the State trait:
 // State: Validated
-// When in Validated, receiving Event::Process transitions to Enriched.
+// When receiving Event::Process, transitions to Enriched.
 struct Validated;
 impl State for Validated {
     fn handle(self: Box<Self>, _event: Event) -> Box<dyn State> {
@@ -44,7 +42,7 @@ impl State for Validated {
 }
 
 // State: Enriched
-// Transitions to Persisted.
+// When receiving Event::Process, transitions to Persisted.
 struct Enriched;
 impl State for Enriched {
     fn handle(self: Box<Self>, _event: Event) -> Box<dyn State> {
@@ -58,7 +56,7 @@ impl State for Enriched {
 }
 
 // State: Persisted
-// No further state after this. Returning self means the machine has reached its final state.
+// This is the final state. It returns itself to indicate that no further transitions occur.
 struct Persisted;
 impl State for Persisted {
     fn handle(self: Box<Self>, _event: Event) -> Box<dyn State> {
@@ -71,20 +69,19 @@ impl State for Persisted {
     }
 }
 
-// Core state machine logic
-// Starts from Validated.
-// Loops through state transitions using handle().
-// Ends when the state does not change (meaning it reached a terminal state like Persisted).
+// Runs the state machine starting from the Validated state.
+// Repeatedly applies the same event and transitions between states.
+// Stops when the FSM reaches a state that does not change (final state).
 fn process_event(event: Event) {
     let mut state: Box<dyn State> = Box::new(Validated);
 
     loop {
-        // Store current state's name before moving it
+        // Save the current state's name before moving to the next state
         let current_name = state.name();
         let next = state.handle(event.clone());
 
+        // If the state hasn't changed, we assume we've reached the final state
         if current_name == next.name() {
-            // Final state reached
             println!("Final state: {}", next.name());
             break;
         }
@@ -95,6 +92,6 @@ fn process_event(event: Event) {
 
 fn main() {
     println!("--- State Machine Demo ---");
-    // Launches the state machine with one event.
+    // Start the FSM by sending the Process event
     process_event(Event::Process);
 }
