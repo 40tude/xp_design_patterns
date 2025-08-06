@@ -1,60 +1,111 @@
-// cargo run --example 09_command_bus
+// cargo run --example 10_command_bus
+
+// Command Bus with more than one command
+// Added middleware (here, logging)
+// Added Error management (vs panic previously)
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::fmt;
 
-// Traits
+// Command Trait (base)
 pub trait Command {
-    type Output; // kind of placeholder for a type to be determined later (String, bool...)
+    type Output;
 }
 
 pub trait Handler<C: Command> {
     fn handle(&self, cmd: C) -> C::Output;
 }
 
+// Middleware - logging
+trait CommandLogger {
+    fn log(&self, message: &str);
+}
+
+struct ConsoleLogger;
+
+impl CommandLogger for ConsoleLogger {
+    fn log(&self, message: &str) {
+        println!("[LOG] {message}");
+    }
+}
+
 // Commands
+#[derive(Debug)]
 struct CreateUser {
     pub name: String,
 }
 
 impl Command for CreateUser {
-    type Output = String;
+    type Output = Result<String, String>;
 }
 
+#[derive(Debug)]
 struct DeleteUser {
     pub id: u32,
 }
 
 impl Command for DeleteUser {
-    type Output = bool;
+    type Output = Result<bool, String>;
 }
 
 // Handlers
-struct CreateUserHandler;
+struct CreateUserHandler {
+    logger: Box<dyn CommandLogger>,
+}
+
+impl CreateUserHandler {
+    pub fn new(logger: Box<dyn CommandLogger>) -> Self {
+        CreateUserHandler { logger }
+    }
+}
 
 impl Handler<CreateUser> for CreateUserHandler {
-    fn handle(&self, cmd: CreateUser) -> String {
-        format!("Utilisateur créé: {}", cmd.name)
+    fn handle(&self, cmd: CreateUser) -> Result<String, String> {
+        self.logger.log(&format!("Try to delete user: {}", cmd.name));
+
+        if cmd.name.is_empty() {
+            Err("Name cannot be empty".to_string())
+        } else {
+            let result = format!("User created: {}", cmd.name);
+            self.logger.log(&format!("Success: {result}"));
+            Ok(result)
+        }
     }
 }
 
-struct DeleteUserHandler;
+struct DeleteUserHandler {
+    logger: Box<dyn CommandLogger>,
+}
+
+impl DeleteUserHandler {
+    pub fn new(logger: Box<dyn CommandLogger>) -> Self {
+        DeleteUserHandler { logger }
+    }
+}
 
 impl Handler<DeleteUser> for DeleteUserHandler {
-    fn handle(&self, cmd: DeleteUser) -> bool {
-        println!("Utilisateur {} supprimé", cmd.id);
-        true
+    fn handle(&self, cmd: DeleteUser) -> Result<bool, String> {
+        self.logger.log(&format!("Try to delete user: {}", cmd.id));
+
+        if cmd.id == 0 {
+            Err("Invalid ID".to_string())
+        } else {
+            self.logger.log(&format!("User {} deleted", cmd.id));
+            Ok(true)
+        }
     }
 }
 
-// CommandBus
+// CommandBus with error mgt
 struct CommandBus {
     handlers: HashMap<TypeId, Box<dyn Any>>,
+    logger: Box<dyn CommandLogger>,
 }
 
 impl CommandBus {
-    pub fn new() -> Self {
-        CommandBus { handlers: HashMap::new() }
+    pub fn new(logger: Box<dyn CommandLogger>) -> Self {
+        CommandBus { handlers: HashMap::new(), logger }
     }
 
     pub fn register<C, H>(&mut self, handler: H)
@@ -63,38 +114,59 @@ impl CommandBus {
         H: Handler<C> + 'static,
     {
         self.handlers.insert(TypeId::of::<C>(), Box::new(handler));
+        self.logger.log(&format!("Handler registered for the command {:?}", TypeId::of::<C>()));
     }
 
     pub fn dispatch<C, H>(&self, cmd: C) -> C::Output
     where
-        C: Command + 'static,
+        C: Command + fmt::Debug + 'static,
         H: Handler<C> + 'static,
     {
+        self.logger.log(&format!("Dispatching of the command: {cmd:?}"));
+
         let type_id = TypeId::of::<C>();
-        let handler = self.handlers.get(&type_id).unwrap_or_else(|| panic!("Aucun handler enregistré pour la commande {type_id:?}"));
-
-        let handler = handler.downcast_ref::<H>().expect("Mauvais type de handler");
-
-        handler.handle(cmd)
+        match self.handlers.get(&type_id) {
+            Some(handler) => match handler.downcast_ref::<H>() {
+                Some(handler) => handler.handle(cmd),
+                None => {
+                    let msg = format!("Wrong handler type for the command {type_id:?}");
+                    self.logger.log(&msg);
+                    panic!("{}", msg)
+                }
+            },
+            None => {
+                let msg = format!("No handler registered for the command {type_id:?}");
+                self.logger.log(&msg);
+                panic!("{}", msg)
+            }
+        }
     }
 }
 
 fn main() {
-    let mut bus = CommandBus::new();
+    // Logger initialization
+    let logger = Box::new(ConsoleLogger);
 
-    bus.register::<CreateUser, CreateUserHandler>(CreateUserHandler);
-    bus.register::<DeleteUser, DeleteUserHandler>(DeleteUserHandler);
+    // Command Bus initialization (with the logger)
+    let mut bus = CommandBus::new(logger);
 
-    let creation_result = bus.dispatch::<CreateUser, CreateUserHandler>(CreateUser { name: "Alice".into() });
-    println!("{creation_result}");
+    // Registers the handlers with their own logger
+    bus.register::<CreateUser, CreateUserHandler>(CreateUserHandler::new(Box::new(ConsoleLogger)));
+    bus.register::<DeleteUser, DeleteUserHandler>(DeleteUserHandler::new(Box::new(ConsoleLogger)));
 
-    let deletion_result = bus.dispatch::<DeleteUser, DeleteUserHandler>(DeleteUser { id: 42 });
-    println!("Suppression réussie ? {deletion_result}");
+    // Execute commands with error management
+    match bus.dispatch::<CreateUser, CreateUserHandler>(CreateUser { name: "Alice".into() }) {
+        Ok(result) => println!("Result: {result}"),
+        Err(e) => println!("Error: {e}"),
+    }
 
-    use_bus(&bus);
-}
+    match bus.dispatch::<CreateUser, CreateUserHandler>(CreateUser { name: "".into() }) {
+        Ok(result) => println!("Result: {result}"),
+        Err(e) => println!("Error: {e}"),
+    }
 
-fn use_bus(bus: &CommandBus) {
-    let result = bus.dispatch::<CreateUser, CreateUserHandler>(CreateUser { name: "Bob".into() });
-    println!("Dans une autre fonction: {result}");
+    match bus.dispatch::<DeleteUser, DeleteUserHandler>(DeleteUser { id: 42 }) {
+        Ok(result) => println!("Deletion succeeded ? {result}"),
+        Err(e) => println!("Error: {e}"),
+    }
 }
