@@ -1,100 +1,100 @@
 // cargo run --example 09_command_bus
 
+// Avoid let result                 = dispatch(CreateUser { name: "Alice".into() }, CreateUserHandler);
+//       let result: Option<String> = bus.dispatch(&CreateUser { name: "Alice".into() });
+// We put the command on the bus and it is able to find the good handler
+// Doing so the caller doesn't even know who will create (or delete) the user.
+// This is totally transparent
+
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
-// Traits
-pub trait Command {
-    type Output; // kind of placeholder for a type to be determined later (String, bool...)
+// Command trait
+pub trait Command: Any + Send {
+    fn as_any(&self) -> &dyn Any;
 }
-
-pub trait Handler<C: Command> {
-    fn handle(&self, cmd: C) -> C::Output;
-}
-
-// Commands
-struct CreateUser {
-    pub name: String,
-}
-
-impl Command for CreateUser {
-    type Output = String;
-}
-
-struct DeleteUser {
-    pub id: u32,
-}
-
-impl Command for DeleteUser {
-    type Output = bool;
-}
-
-// Handlers
-struct CreateUserHandler;
-
-impl Handler<CreateUser> for CreateUserHandler {
-    fn handle(&self, cmd: CreateUser) -> String {
-        format!("Utilisateur créé: {}", cmd.name)
+impl<T: Any + Send> Command for T {
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
-struct DeleteUserHandler;
-
-impl Handler<DeleteUser> for DeleteUserHandler {
-    fn handle(&self, cmd: DeleteUser) -> bool {
-        println!("Utilisateur {} supprimé", cmd.id);
-        true
-    }
+// CommandHandler trait
+pub trait CommandHandler: Send {
+    fn handle(&self, cmd: &dyn Command) -> Box<dyn Any>;
+    fn type_id(&self) -> TypeId;
 }
 
-// CommandBus
-struct CommandBus {
-    handlers: HashMap<TypeId, Box<dyn Any>>,
+// Implémentation du bus
+struct AppCommandBus {
+    handlers: HashMap<TypeId, Box<dyn CommandHandler>>,
 }
 
-impl CommandBus {
-    pub fn new() -> Self {
-        CommandBus { handlers: HashMap::new() }
+impl AppCommandBus {
+    fn new() -> Self {
+        AppCommandBus { handlers: HashMap::new() }
     }
 
-    pub fn register<C, H>(&mut self, handler: H)
+    fn register<C: Command, H>(&mut self, handler: H)
     where
-        C: Command + 'static,
-        H: Handler<C> + 'static,
+        H: CommandHandler + 'static,
     {
         self.handlers.insert(TypeId::of::<C>(), Box::new(handler));
     }
 
-    pub fn dispatch<C, H>(&self, cmd: C) -> C::Output
-    where
-        C: Command + 'static,
-        H: Handler<C> + 'static,
-    {
-        let type_id = TypeId::of::<C>();
-        let handler = self.handlers.get(&type_id).unwrap_or_else(|| panic!("Aucun handler enregistré pour la commande {type_id:?}"));
+    fn dispatch<R: 'static>(&self, cmd: &dyn Command) -> Option<R> {
+        let type_id = cmd.as_any().type_id();
+        let handler = self.handlers.get(&type_id)?;
 
-        let handler = handler.downcast_ref::<H>().expect("Mauvais type de handler");
-
-        handler.handle(cmd)
+        let result = handler.handle(cmd);
+        result.downcast::<R>().ok().map(|boxed| *boxed)
     }
 }
 
-fn main() {
-    let mut bus = CommandBus::new();
-
-    bus.register::<CreateUser, CreateUserHandler>(CreateUserHandler);
-    bus.register::<DeleteUser, DeleteUserHandler>(DeleteUserHandler);
-
-    let creation_result = bus.dispatch::<CreateUser, CreateUserHandler>(CreateUser { name: "Alice".into() });
-    println!("{creation_result}");
-
-    let deletion_result = bus.dispatch::<DeleteUser, DeleteUserHandler>(DeleteUser { id: 42 });
-    println!("Suppression réussie ? {deletion_result}");
-
-    use_bus(&bus);
+// Commandes
+struct CreateUser {
+    pub name: String,
+}
+struct DeleteUser {
+    pub name: String,
 }
 
-fn use_bus(bus: &CommandBus) {
-    let result = bus.dispatch::<CreateUser, CreateUserHandler>(CreateUser { name: "Bob".into() });
-    println!("Dans une autre fonction: {result}");
+// Handlers
+struct CreateUserHandler;
+impl CommandHandler for CreateUserHandler {
+    fn handle(&self, cmd: &dyn Command) -> Box<dyn Any> {
+        let create = cmd.as_any().downcast_ref::<CreateUser>().unwrap();
+        let msg = format!("User {} is created", create.name);
+        Box::new(msg)
+    }
+
+    fn type_id(&self) -> TypeId {
+        TypeId::of::<CreateUser>()
+    }
+}
+
+struct DeleteUserHandler;
+impl CommandHandler for DeleteUserHandler {
+    fn handle(&self, cmd: &dyn Command) -> Box<dyn Any> {
+        let delete = cmd.as_any().downcast_ref::<DeleteUser>().unwrap();
+        let msg = format!("User {} is deleted", delete.name);
+        Box::new(msg)
+    }
+
+    fn type_id(&self) -> TypeId {
+        TypeId::of::<DeleteUser>()
+    }
+}
+
+// Usage
+fn main() {
+    let mut bus = AppCommandBus::new();
+    bus.register::<CreateUser, _>(CreateUserHandler);
+    bus.register::<DeleteUser, _>(DeleteUserHandler);
+
+    let result: Option<String> = bus.dispatch(&CreateUser { name: "Alice".into() });
+    println!("{}", result.unwrap()); // User Alice is created
+
+    let result: Option<String> = bus.dispatch(&DeleteUser { name: "Alice".into() });
+    println!("{}", result.unwrap()); // User Alice is deleted
 }

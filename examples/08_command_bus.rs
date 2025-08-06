@@ -92,7 +92,7 @@ impl Handler<CreateUser> for CreateUserHandler {
     }
 }
 
-// This function is the "command bus" or dispatcher.
+// This function is the "Command Bus" or Dispatcher.
 // It takes any command and a matching handler, and invokes the handler.
 fn dispatch<C: Command, H: Handler<C>>(cmd: C, handler: H) -> C::Output {
     handler.handle(cmd)
