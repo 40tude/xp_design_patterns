@@ -10,6 +10,13 @@
 // We use `Box<dyn State>` to hold the current state and allow transitions between different types.
 // The main loop continues until the FSM reaches a terminal state.
 
+// This approach make sense if:
+//      The states have very different behaviors.
+//      You want to allow other crates to add states.
+//      You need to store different data in each state.
+
+// There is a simpler and faster approach based on enum and match expression
+
 use std::fmt::Debug;
 
 // Define the possible events the FSM can handle.
