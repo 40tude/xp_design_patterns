@@ -1,68 +1,61 @@
-// cargo run --example 07_tokio_event_dispatcher
+// cargo run --example 05_tokio_event_dispatcher
 
-// multiple workers
-// A channel is created for each worker
-// main() sends messages in a worker selected randomly
-// Each worker listens to its own Receiver
-// They all receive a Shutdown at the end, bringing their loop to a clean end.
+// Why this architecture scales well:
+// - Async backpressure through bounded channels
+// - Natural separation of concerns (producers and consumers are decoupled)
+// - Easy fault isolation — if one worker crashes, others can continue
+// - No shared mutable state (safe concurrency)
 
-use rand::Rng;
+// This example uses Tokio's mpsc (multi-producer, single-consumer) asynchronous channel.
+// It allows multiple asynchronous tasks to send messages to the same receiver task.
+
 use tokio::sync::mpsc;
 
-#[derive(Debug)]
+// Define the type of messages that will flow through the channel.
+//
+// - Event(String): carries a payload (here a String)
+// - Shutdown: signals the worker to stop and exit gracefully
 enum Message {
     Event(String),
     Shutdown,
 }
 
-// Worker logic
-async fn start_worker(mut rx: mpsc::Receiver<Message>, id: usize) {
+// This asynchronous function acts as the message consumer.
+//
+// It listens for incoming messages using `rx.recv().await` inside a loop.
+// The loop stops either when a Shutdown message is received,
+// or when the channel is closed (no more messages).
+async fn start_worker(mut rx: mpsc::Receiver<Message>) {
     while let Some(msg) = rx.recv().await {
         match msg {
             Message::Event(data) => {
-                println!("[Worker {id}] received: {data}");
+                println!("Worker received: {}", data);
             }
             Message::Shutdown => {
-                println!("[Worker {id}] shutting down.");
+                println!("Worker shutting down.");
                 break;
             }
         }
     }
 }
 
+// The #[tokio::main] macro initializes the async runtime and allows `main` to be async.
 #[tokio::main]
 async fn main() {
-    const NUM_WORKERS: usize = 3;
+    // Create a channel with a buffer size of 100 messages.
+    //
+    // - tx: the sender side, used by producers to send messages
+    // - rx: the receiver side, used by the consumer (worker)
+    let (tx, rx) = mpsc::channel(100);
 
-    // Create one sender, and a receiver per worker
-    let mut handles = vec![];
-    let mut senders = vec![];
+    // Spawn a new asynchronous task to run the worker.
+    //
+    // The worker will process messages received through the channel.
+    tokio::spawn(start_worker(rx));
 
-    for i in 0..NUM_WORKERS {
-        let (tx, rx) = mpsc::channel(100); // bounded channels
-        senders.push(tx);
-        // Spawn each worker with its own receiver
-        let handle = tokio::spawn(start_worker(rx, i));
-        handles.push(handle);
-    }
+    // Send a message to the worker
+    tx.send(Message::Event("hello".into())).await.unwrap();
 
-    // Create a randome numbers generator
-    let mut rng = rand::rng();
-
-    // Send messages randomly
-    for i in 0..10 {
-        let worker_index = rng.random_range(0..NUM_WORKERS); // Randomly select a worker
-        let msg = Message::Event(format!("Message {i}"));
-        senders[worker_index].send(msg).await.unwrap();
-    }
-
-    // Send Shutdown to each worker
-    for tx in &senders {
-        tx.send(Message::Shutdown).await.unwrap();
-    }
-
-    // Wait for all workers to finish
-    for handle in handles {
-        handle.await.unwrap();
-    }
+    // Send the shutdown signal to stop the worker
+    tx.send(Message::Shutdown).await.unwrap();
 }

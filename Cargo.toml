@@ -4,5 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+criterion = "0.7.0"
 rand = "0.9.2"
 tokio = { version = "1.47.1", features = ["full"] }
+
+
+[[bench]]
+name = "01_fsm_enums"
+harness = false
+
+[[bench]]
+name = "02_fsm_traits"
+harness = false
