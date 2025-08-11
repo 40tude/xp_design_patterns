@@ -10,9 +10,13 @@ tokio = { version = "1.47.1", features = ["full"] }
 
 
 [[bench]]
-name = "01_fsm_enums"
+name = "01_enums_fsm"
 harness = false
 
 [[bench]]
-name = "02_fsm_traits"
+name = "02_traits_fsm"
+harness = false
+
+[[bench]]
+name = "03_typed_fsm"
 harness = false

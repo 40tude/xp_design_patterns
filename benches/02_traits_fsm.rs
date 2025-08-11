@@ -1,10 +1,10 @@
 // cargo add criterion
 
 // [[bench]]
-// name = "02_fsm_traits"
+// name = "02_traits_fsm"
 // harness = false
 
-// cargo bench --bench 02_fsm_traits
+// cargo bench --bench 02_traits_fsm
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::fs::File;
@@ -118,11 +118,23 @@ fn load_file_contents() -> String {
 fn trait_fsm_benchmark(c: &mut Criterion) {
     let text = load_file_contents();
 
-    c.bench_function("trait_fsm_parsing", |b| {
+    // --- One-time sanity check: NOT measured ---
+    // Do a single parse and print the stats so you can verify values.
+    let mut check = TraitParser::new();
+    check.process_text(&text);
+    println!(
+        "Sanity stats -> words: {}, lines: {}, numbers: {}",
+        check.statistics.word_count, check.statistics.line_count, check.statistics.number_count
+    );
+
+    // --- Actual benchmark: measured ---
+    c.bench_function("enum_fsm_parsing", |b| {
         b.iter(|| {
+            // Rebuild the parser each iteration so we measure a full parse
             let mut parser = TraitParser::new();
             parser.process_text(black_box(&text));
-            parser.statistics
+            // Return stats to keep work observable; black_box to defeat DCE further
+            black_box(parser.statistics)
         })
     });
 }

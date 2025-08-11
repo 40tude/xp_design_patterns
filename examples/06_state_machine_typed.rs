@@ -19,7 +19,7 @@ impl HttpClient<Uninitialized> {
     }
 
     fn connect(self) -> HttpClient<Connected> {
-        // ! <- self NOT &self
+        // ! self NOT &self
         println!("Connecting to {}...", self.address);
         HttpClient {
             address: self.address,

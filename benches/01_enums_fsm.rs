@@ -1,10 +1,10 @@
 // cargo add criterion
 
 // [[bench]]
-// name = "01_fsm_enums"
+// name = "01_enums_fsm"
 // harness = false
 
-// cargo bench --bench 01_fsm_enums
+// cargo bench --bench 01_enums_fsm
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::fs::File;
@@ -28,16 +28,14 @@ struct TextStats {
 
 struct Fsm {
     current_state: FsmState,
-    stats: TextStats,
-    current_line: usize,
+    statistics: TextStats,
 }
 
 impl Fsm {
     fn new() -> Self {
         Self {
             current_state: FsmState::Whitespace,
-            stats: TextStats::default(),
-            current_line: 1,
+            statistics: TextStats::default(),
         }
     }
 
@@ -46,21 +44,19 @@ impl Fsm {
             FsmState::Whitespace => {
                 if c.is_alphabetic() {
                     self.current_state = FsmState::InWord;
-                    self.stats.word_count += 1;
+                    self.statistics.word_count += 1;
                 } else if c.is_numeric() {
                     self.current_state = FsmState::InNumber;
-                    self.stats.number_count += 1;
+                    self.statistics.number_count += 1;
                 } else if c == '\n' {
-                    self.stats.line_count += 1;
-                    self.current_line += 1;
+                    self.statistics.line_count += 1;
                 }
             }
             FsmState::InWord => {
                 if !c.is_alphabetic() {
                     self.current_state = FsmState::Whitespace;
                     if c == '\n' {
-                        self.stats.line_count += 1;
-                        self.current_line += 1;
+                        self.statistics.line_count += 1;
                     }
                 }
             }
@@ -68,8 +64,7 @@ impl Fsm {
                 if !c.is_numeric() {
                     self.current_state = FsmState::Whitespace;
                     if c == '\n' {
-                        self.stats.line_count += 1;
-                        self.current_line += 1;
+                        self.statistics.line_count += 1;
                     }
                 }
             }
@@ -83,25 +78,42 @@ impl Fsm {
     }
 }
 
-fn benchmark_enum_fsm(c: &mut Criterion) {
+fn load_file_contents() -> String {
     let path = Path::new("./benches/book.txt");
-    let file = File::open(path).expect("Unable to open file");
+    let file = File::open(path).expect("Failed to open book.txt");
     let reader = BufReader::new(file);
 
-    let mut full_text = String::new();
+    let mut contents = String::new();
     for line in reader.lines() {
-        full_text.push_str(&line.unwrap());
-        full_text.push('\n');
+        contents.push_str(&line.unwrap());
+        contents.push('\n');
     }
 
-    c.bench_function("enum_fsm_text_parsing", |b| {
+    contents
+}
+
+fn benchmark_enum_fsm(c: &mut Criterion) {
+    let text = load_file_contents();
+
+    // --- One-time sanity check: NOT measured ---
+    // Do a single parse and print the stats so you can verify values.
+    let mut check = Fsm::new();
+    check.process_text(&text);
+    println!(
+        "Sanity stats -> words: {}, lines: {}, numbers: {}",
+        check.statistics.word_count, check.statistics.line_count, check.statistics.number_count
+    );
+
+    // --- Actual benchmark: measured ---
+    c.bench_function("enum_fsm_parsing", |b| {
         b.iter(|| {
+            // Rebuild the parser each iteration so we measure a full parse
             let mut parser = Fsm::new();
-            parser.process_text(black_box(&full_text));
-            parser.stats
+            parser.process_text(black_box(&text));
+            // Return stats to keep work observable; black_box to defeat DCE further
+            black_box(parser.statistics)
         })
     });
 }
-
 criterion_group!(benches, benchmark_enum_fsm);
 criterion_main!(benches);
